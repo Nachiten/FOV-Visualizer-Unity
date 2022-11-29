@@ -6,14 +6,25 @@
 		_Metallic ("Metallic", Range(0,1)) = 0.0
 	}
 	SubShader {
-		Tags { "RenderType"="Opaque" "Queue"="Geometry-100" }
+		Tags { 
+			"RenderType"="Opaque" 
+			// This is rendered before the other geometry
+			"Queue"="Geometry-100" 
+		}
+		// Avoids writing to the color channels
 		ColorMask 0
+		
+		// Stop the shader from writing to the depth buffer
 		ZWrite off
+
 		LOD 200
 
 		Stencil {
+			// This is the reference value that will be compared to the stencil buffer
 			Ref 1
+			// if pass, leave it as it is
 			Pass replace
+			//Fail replace
 		}
 
 		CGPROGRAM
@@ -42,6 +53,7 @@
 			o.Smoothness = _Glossiness;
 			o.Alpha = c.a;
 		}
+		
 		ENDCG
 	}
 	FallBack "Diffuse"

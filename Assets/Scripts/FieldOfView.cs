@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿using System;
+using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 
@@ -10,7 +11,8 @@ public class FieldOfView : MonoBehaviour
     public LayerMask targetMask;
     public LayerMask obstacleMask;
 
-    [HideInInspector] public List<Transform> visibleTargets = new List<Transform>();
+    [HideInInspector] public List<Transform> visibleTargets = new();
+    private List<Transform> allTargets;
 
     public float meshResolution;
     public int edgeResolveIterations;
@@ -21,12 +23,23 @@ public class FieldOfView : MonoBehaviour
     public MeshFilter viewMeshFilter;
     private Mesh viewMesh;
 
+    private void Awake()
+    {
+        // All targets is all the gameobjects in layer "Targets"
+        GameObject[] possibleTargets = GameObject.FindGameObjectsWithTag("Target");
+        allTargets = new List<Transform>();
+        
+        foreach (GameObject target in possibleTargets)
+        {
+            allTargets.Add(target.transform);
+        }
+        
+        viewMesh = new Mesh { name = "View Mesh" };
+        viewMeshFilter.mesh = viewMesh;
+    }
+
     private void Start()
     {
-        viewMesh = new Mesh();
-        viewMesh.name = "View Mesh";
-        viewMeshFilter.mesh = viewMesh;
-
         StartCoroutine(nameof(FindTargetsWithDelay), .2f);
     }
 
@@ -36,31 +49,59 @@ public class FieldOfView : MonoBehaviour
         {
             yield return new WaitForSeconds(delay);
             FindVisibleTargets();
+            Cosa();
         }
     }
 
+    // private void Update()
+    // {
+    //     // ShowAndHideTargets();
+    // }
+
+    private void Cosa()
+    {
+        // Hide mesh renderer of every target
+        foreach (Transform target in allTargets)
+        {
+            target.GetComponent<MeshRenderer>().enabled = visibleTargets.Contains(target);
+        }
+    }
+    
     private void LateUpdate()
     {
         DrawFieldOfView();
     }
+
+    // private void ShowAndHideTargets()
+    // {
+    //     Hide or show object depending on visible
+    //     foreach (Transform target in allTargets)
+    //     {
+    //         target.gameObject.SetActive(visibleTargets.Contains(target));
+    //     }
+    // }
 
     private void FindVisibleTargets()
     {
         visibleTargets.Clear();
         Collider[] targetsInViewRadius = Physics.OverlapSphere(transform.position, viewRadius, targetMask);
 
-        for (int i = 0; i < targetsInViewRadius.Length; i++)
+        foreach (Collider theCollider in targetsInViewRadius)
         {
-            Transform target = targetsInViewRadius[i].transform;
+            Transform target = theCollider.transform;
             Vector3 dirToTarget = (target.position - transform.position).normalized;
-            if (Vector3.Angle(transform.forward, dirToTarget) < viewAngle / 2)
-            {
-                float dstToTarget = Vector3.Distance(transform.position, target.position);
-                if (!Physics.Raycast(transform.position, dirToTarget, dstToTarget, obstacleMask))
-                {
-                    visibleTargets.Add(target);
-                }
-            }
+            
+            // Me no entender
+            if (!(Vector3.Angle(transform.forward, dirToTarget) < viewAngle / 2)) 
+                continue;
+            
+            float distanceToTarget = Vector3.Distance(transform.position, target.position);
+            
+            // There is an obstacle
+            if (Physics.Raycast(transform.position, dirToTarget, distanceToTarget, obstacleMask))
+                continue;
+                
+            visibleTargets.Add(target);
         }
     }
 
@@ -70,6 +111,7 @@ public class FieldOfView : MonoBehaviour
         float stepAngleSize = viewAngle / stepCount;
         List<Vector3> viewPoints = new();
         ViewCastInfo oldViewCast = new();
+        
         for (int i = 0; i <= stepCount; i++)
         {
             float angle = transform.eulerAngles.y - viewAngle / 2 + stepAngleSize * i;
@@ -78,7 +120,7 @@ public class FieldOfView : MonoBehaviour
             if (i > 0)
             {
                 bool edgeDstThresholdExceeded = Mathf.Abs(oldViewCast.dst - newViewCast.dst) > edgeDstThreshold;
-                if (oldViewCast.hit != newViewCast.hit || (oldViewCast.hit && newViewCast.hit && edgeDstThresholdExceeded))
+                if (oldViewCast.hit != newViewCast.hit || (oldViewCast.hit && edgeDstThresholdExceeded))
                 {
                     EdgeInfo edge = FindEdge(oldViewCast, newViewCast);
                     if (edge.pointA != Vector3.zero)
@@ -106,12 +148,12 @@ public class FieldOfView : MonoBehaviour
         {
             vertices[i + 1] = transform.InverseTransformPoint(viewPoints[i]) + Vector3.forward * maskCutawayDst;
 
-            if (i < vertexCount - 2)
-            {
-                triangles[i * 3] = 0;
-                triangles[i * 3 + 1] = i + 1;
-                triangles[i * 3 + 2] = i + 2;
-            }
+            if (i >= vertexCount - 2) 
+                continue;
+            
+            triangles[i * 3] = 0;
+            triangles[i * 3 + 1] = i + 1;
+            triangles[i * 3 + 2] = i + 2;
         }
 
         viewMesh.Clear();
@@ -161,19 +203,17 @@ public class FieldOfView : MonoBehaviour
     public Vector3 DirFromAngle(float angleInDegrees, bool angleIsGlobal)
     {
         if (!angleIsGlobal)
-        {
             angleInDegrees += transform.eulerAngles.y;
-        }
-
+        
         return new Vector3(Mathf.Sin(angleInDegrees * Mathf.Deg2Rad), 0, Mathf.Cos(angleInDegrees * Mathf.Deg2Rad));
     }
 
     private struct ViewCastInfo
     {
-        public bool hit;
-        public Vector3 point;
-        public float dst;
-        public float angle;
+        public readonly bool hit;
+        public readonly Vector3 point;
+        public readonly float dst;
+        public readonly float angle;
 
         public ViewCastInfo(bool _hit, Vector3 _point, float _dst, float _angle)
         {
@@ -186,8 +226,8 @@ public class FieldOfView : MonoBehaviour
 
     private struct EdgeInfo
     {
-        public Vector3 pointA;
-        public Vector3 pointB;
+        public readonly Vector3 pointA;
+        public readonly Vector3 pointB;
 
         public EdgeInfo(Vector3 _pointA, Vector3 _pointB)
         {
